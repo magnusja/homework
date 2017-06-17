@@ -6,6 +6,7 @@ import numpy as np
 import tf_util
 import gym
 import load_policy
+from keras.models import load_model
 
 def main():
     import argparse
@@ -17,7 +18,6 @@ def main():
     args = parser.parse_args()
 
     print('loading and building behaviroul copy policy')
-    policy_fn = load_policy.load_policy(args.expert_policy_file)
     model = load_model(args.model_file)
     print('loaded and built')
 
@@ -39,7 +39,7 @@ def main():
             steps = 0
             while not done:
                 action = model.predict(obs[None,:])
-                action = action.reshape((1, action_dim))
+                action = action.reshape((1, -1))
                 observations.append(obs)
                 actions.append(action)
                 obs, r, done, _ = env.step(action)

@@ -1,14 +1,5 @@
 #!/usr/bin/env python
 
-"""
-Code to load an expert policy and generate roll-out data for behavioral cloning.
-Example usage:
-    python run_expert.py experts/Humanoid-v1.pkl Humanoid-v1 --render --num_rollouts 20
-    python run_expert.py experts/Hopper-v1.pkl Hopper-v1 --render --num_rollouts 20
-
-Author of this script and included expert policies: Jonathan Ho (hoj@openai.com)
-"""
-
 import pickle
 import tensorflow as tf
 import numpy as np
@@ -19,16 +10,15 @@ import load_policy
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('expert_policy_file', type=str)
+    parser.add_argument('model_file', type=str)
     parser.add_argument('envname', type=str)
     parser.add_argument('--render', action='store_true')
     parser.add_argument("--max_timesteps", type=int)
-    parser.add_argument('--num_rollouts', type=int, default=20,
-                        help='Number of expert roll outs')
     args = parser.parse_args()
 
-    print('loading and building expert policy')
+    print('loading and building behaviroul copy policy')
     policy_fn = load_policy.load_policy(args.expert_policy_file)
+    model = load_model(args.model_file)
     print('loaded and built')
 
     with tf.Session():
@@ -41,14 +31,15 @@ def main():
         returns = []
         observations = []
         actions = []
-        for i in range(args.num_rollouts):
+        for i in range(20):
             print('iter', i)
             obs = env.reset()
             done = False
             totalr = 0.
             steps = 0
             while not done:
-                action = policy_fn(obs[None,:])
+                action = model.predict(obs[None,:])
+                action = action.reshape((1, action_dim))
                 observations.append(obs)
                 actions.append(action)
                 obs, r, done, _ = env.step(action)
@@ -64,15 +55,6 @@ def main():
         print('returns', returns)
         print('mean return', np.mean(returns))
         print('std of return', np.std(returns))
-
-        expert_data = {'observations': np.array(observations),
-                       'actions': np.array(actions)}
-
-        print(np.array(observations).shape)
-        print(np.array(actions).shape)
-
-        np.save('data/' + args.envname + "_observation_data", np.array(observations))
-        np.save('data/' + args.envname + "_action_data", np.array(actions))
 
 if __name__ == '__main__':
     main()

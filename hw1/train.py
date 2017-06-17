@@ -2,7 +2,8 @@
 
 import keras
 from keras.models import Sequential
-from keras.layers import Dense, Activation
+from keras.layers import Dense, Activation, Dropout
+from keras.layers.normalization import BatchNormalization
 
 import numpy as np
 
@@ -20,17 +21,21 @@ def main():
 
     model = Sequential()
     model.add(Dense(units=1024, input_dim=observations.shape[1]))
+    model.add(BatchNormalization())
     model.add(Activation('relu'))
+    model.add(Dropout(0.4))
     model.add(Dense(units=256))
+    model.add(BatchNormalization())
     model.add(Activation('relu'))
+    model.add(Dropout(0.4))
     model.add(Dense(units=actions.shape[2]))
 
     model.compile(loss='mean_squared_error', optimizer='adam', 
               metrics=['mean_squared_error'])
 
-    history = model.fit(observations, labels, batch_size=256,epochs=15)
+    history = model.fit(observations, labels, batch_size=256, epochs=15)
 
-    model.save('model/' + args.name)
+    model.save('models/' + args.name + '.h5')
 
 
 if __name__ == '__main__':

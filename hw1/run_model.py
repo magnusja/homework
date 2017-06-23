@@ -12,6 +12,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('model_file', type=str)
+    parser.add_argument('expert_policy_file', type=str)
     parser.add_argument('envname', type=str)
     parser.add_argument('--render', action='store_true')
     parser.add_argument("--max_timesteps", type=int)
@@ -19,6 +20,7 @@ def main():
 
     print('loading and building behaviroul copy policy')
     model = load_model(args.model_file)
+    policy_fn = load_policy.load_policy(args.expert_policy_file)
     print('loaded and built')
 
     with tf.Session():
@@ -41,7 +43,8 @@ def main():
                 action = model.predict(obs[None,:])
                 action = action.reshape((1, -1))
                 observations.append(obs)
-                actions.append(action)
+                expert_action = policy_fn(obs[None,:])
+                actions.append(expert_action)
                 obs, r, done, _ = env.step(action)
                 totalr += r
                 steps += 1
@@ -55,6 +58,9 @@ def main():
         print('returns', returns)
         print('mean return', np.mean(returns))
         print('std of return', np.std(returns))
+
+        np.save('data/' + args.envname + "_observation_data_dagger", np.array(observations))
+        np.save('data/' + args.envname + "_action_data_dagger", np.array(actions))
 
 if __name__ == '__main__':
     main()

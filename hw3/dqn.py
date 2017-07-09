@@ -7,6 +7,7 @@ import tensorflow                as tf
 import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
+import os
 
 SAVE_DIR = '/tmp/DQN'
 
@@ -136,7 +137,7 @@ def learn(env,
     q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func_vars')
     target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func_vars')
 
-    action_sample = tf.argmax(q)
+    action_sample = tf.argmax(q, axis=1)
 
     tq = rew_t_ph + gamma * tf.reduce_max(target_q, axis=1) * (1 - done_mask_ph)
 
@@ -177,7 +178,7 @@ def learn(env,
     mean_episode_reward      = -float('nan')
     best_mean_episode_reward = -float('inf')
     last_obs = env.reset()
-    LOG_EVERY_N_STEPS = 10000
+    LOG_EVERY_N_STEPS = 10
 
     for t in itertools.count():
         ### 1. Check stopping criterion

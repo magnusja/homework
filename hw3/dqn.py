@@ -8,6 +8,8 @@ import tensorflow.contrib.layers as layers
 from collections import namedtuple
 from dqn_utils import *
 
+SAVE_DIR = '/tmp/DQN'
+
 OptimizerSpec = namedtuple("OptimizerSpec", ["constructor", "kwargs", "lr_schedule"])
 
 def learn(env,
@@ -141,6 +143,13 @@ def learn(env,
     action_index = tf.stack([tf.range(tf.shape(q)[0]), act_t_ph], axis=1)
     qq = tf.gather_nd(q, action_index)
     total_error = tf.reduce_sum(huber_loss(tq - qq))
+
+    for var in tf.trainable_variables():
+        tf.summary.histogram(var.op.name, var)
+    tf.summary.scalar('total_loss', total_error)
+    summary_op = tf.summary.merge_all()
+    summary_writer = tf.summary.FileWriter(SAVE_DIR, session.graph)
+    saver = tf.train.Saver(tf.global_variables())
 
     ######
 
@@ -283,7 +292,7 @@ def learn(env,
                 session.run(update_target_fn)
                 model_initialized = True
 
-            session.run(train_fn, feed_dict={
+            sess_summary, _ = session.run([summary, train_fn], feed_dict={
                         obs_t_ph: obs_t_batch,
                         act_t_ph: act_t_batch,
                         rew_t_ph: rew_t_batch,
@@ -295,6 +304,11 @@ def learn(env,
 
             if (t / learning_freq) % target_update_freq == 0:
                 session.run(update_target_fn)
+
+            if t % LOG_EVERY_N_STEPS == 0:
+                summary_writer.add_summary(sess_summary, t)
+                checkpoint_path = os.path.join(SAVE_DIR, 'model.ckpt')
+                saver.save(session, checkpoint_path, global_step=t)
 
             #####
 
@@ -312,3 +326,9 @@ def learn(env,
             print("exploration %f" % exploration.value(t))
             print("learning_rate %f" % optimizer_spec.lr_schedule.value(t))
             sys.stdout.flush()
+            summary = tf.Summary(value=[
+                tf.Summary.Value(tag="exploration", simple_value=exploration), 
+                tf.Summary.Value(tag="best_mean_episode_reward", simple_value=best_mean_episode_reward), 
+                tf.Summary.Value(tag="mean_episode_reward", simple_value=mean_episode_reward)
+            ])
+            summary_writer.add_summary(summary, t)

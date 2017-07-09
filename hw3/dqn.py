@@ -138,7 +138,7 @@ def learn(env,
 
     tq = rew_t_ph + gamma * tf.reduce_max(target_q, axis=1) * (1 - done_mask_ph)
 
-    action_index = tf.stack([tf.range(tf.shape(q)[0]), act_t_ph], acis=1)
+    action_index = tf.stack([tf.range(tf.shape(q)[0]), act_t_ph], axis=1)
     qq = tf.gather_nd(q, action_index)
     total_error = tf.reduce_sum(huber_loss(tq - qq))
 

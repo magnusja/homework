@@ -215,7 +215,7 @@ def learn(env,
         if np.random.uniform() < exploration.value(t) or not model_initialized:
             action = np.random.choice(num_actions)
         else:
-            action = session.run(action_sample, feed_dict={obs_t_ph: q_input})
+            action = session.run(action_sample, feed_dict={obs_t_ph: [q_input]})[0]
         obs, reward, done, _ = env.step(action)
         replay_buffer.store_effect(index, action, reward, done)
 

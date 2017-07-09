@@ -292,7 +292,7 @@ def learn(env,
                 session.run(update_target_fn)
                 model_initialized = True
 
-            sess_summary, _ = session.run([summary, train_fn], feed_dict={
+            sess_summary, _ = session.run([summary_op, train_fn], feed_dict={
                         obs_t_ph: obs_t_batch,
                         act_t_ph: act_t_batch,
                         rew_t_ph: rew_t_batch,

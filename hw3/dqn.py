@@ -178,7 +178,7 @@ def learn(env,
     mean_episode_reward      = -float('nan')
     best_mean_episode_reward = -float('inf')
     last_obs = env.reset()
-    LOG_EVERY_N_STEPS = 10
+    LOG_EVERY_N_STEPS = 10000
 
     for t in itertools.count():
         ### 1. Check stopping criterion
@@ -328,7 +328,8 @@ def learn(env,
             print("learning_rate %f" % optimizer_spec.lr_schedule.value(t))
             sys.stdout.flush()
             summary = tf.Summary(value=[
-                tf.Summary.Value(tag="exploration", simple_value=exploration), 
+                tf.Summary.Value(tag="exploration", simple_value=exploration.value(t)), 
+                tf.Summary.Value(tag="learning_rate", simple_value=optimizer_spec.lr_schedule.value(t)), 
                 tf.Summary.Value(tag="best_mean_episode_reward", simple_value=best_mean_episode_reward), 
                 tf.Summary.Value(tag="mean_episode_reward", simple_value=mean_episode_reward)
             ])

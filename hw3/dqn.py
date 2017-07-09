@@ -129,6 +129,16 @@ def learn(env,
     
     # YOUR CODE HERE
 
+    q_func_vars = q_func(obs_t_float, num_actions, scope="q_func_vars", reuse=False)
+    target_q_func_vars = q_func(obs_tp1_ph, num_actions, scope="target_q_func_vars", reuse=False)
+
+    if done_mask_ph:
+      tq = rew_t_ph
+    else:
+      tq = rew_t_ph + gamma * tf.max(q_func_vars)
+
+    total_error = (tq - target_q_func_vars) ** 2
+
     ######
 
     # construct optimization op (with gradient clipping)
@@ -196,6 +206,18 @@ def learn(env,
         
         # YOUR CODE HERE
 
+        index = replay_buffer.store_frame(last_obs)
+        q_input = replay_buffer.encode_recent_observation()
+        action = tf.argmax(target_q_func_vars)
+        if np.random.uniform() > e:
+            action = np.random.choice(num_actions)
+        obs, reward, done, _ = env.step(action)
+        replay_buffer.store_effect(index, action, reward, done)
+
+        last_obs = obs
+        if done:
+            last_obs = env.reset()
+
         #####
 
         # at this point, the environment should have been advanced one step (and
@@ -243,8 +265,31 @@ def learn(env,
             # you should update every target_update_freq steps, and you may find the
             # variable num_param_updates useful for this (it was initialized to 0)
             #####
-            
+
             # YOUR CODE HERE
+
+
+            batch = replay_buffer.sample(batch_size)
+            obs_t_batch, act_t_batch, rew_t_batch, obs_tp1_batch, done_t_batch = batch
+            
+            if not model_initialized:
+                initialize_interdependent_variables(session, tf.global_variables(), {
+                    obs_t_ph: obs_t_batch,
+                    obs_tp1_ph: obs_tp1_batch,
+               })
+
+            session.run(train_fn, feed_dict={
+                        obs_t_ph: obs_t_batch,
+                        act_t_ph: act_t_batch,
+                        rew_t_ph: rew_t_batch,
+                        obs_tp1_ph: obs_tp1_batch,
+                        done_mask_ph: done_t_batch,
+                        learning_rate: optimizer_spec.lr_schedule.value(t)
+                        })
+
+
+            if (t / learning_freq) % target_update_freq == 0:
+                session.run(update_target_fn)
 
             #####
 

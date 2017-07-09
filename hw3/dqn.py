@@ -129,15 +129,18 @@ def learn(env,
     
     # YOUR CODE HERE
 
-    q_func_vars = q_func(obs_t_float, num_actions, scope="q_func_vars", reuse=False)
-    target_q_func_vars = q_func(obs_tp1_ph, num_actions, scope="target_q_func_vars", reuse=False)
+    q = q_func(obs_t_float, num_actions, scope="q_func_vars", reuse=False)
+    target_q = q_func(obs_tp1_float, num_actions, scope="target_q_func_vars", reuse=False)
+    q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='q_func_vars')
+    target_q_func_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_q_func_vars')
 
-    if done_mask_ph:
-      tq = rew_t_ph
-    else:
-      tq = rew_t_ph + gamma * tf.max(q_func_vars)
+    action_sample = tf.argmax(q)
 
-    total_error = (tq - target_q_func_vars) ** 2
+    tq = rew_t_ph + gamma * tf.reduce_max(target_q, axis=1) * (1 - done_mask_ph)
+
+    action_index = tf.stack([tf.range(tf.shape(q)[0]), act_t_ph], acis=1)
+    qq = tf.gather_nd(q, action_index)
+    total_error = tf.reduce_sum(huber_loss(tq - qq))
 
     ######
 
@@ -208,9 +211,11 @@ def learn(env,
 
         index = replay_buffer.store_frame(last_obs)
         q_input = replay_buffer.encode_recent_observation()
-        action = tf.argmax(target_q_func_vars)
-        if np.random.uniform() > e:
+        action = -1
+        if np.random.uniform() < exploration.value(t) or not model_initialized:
             action = np.random.choice(num_actions)
+        else:
+            action = session.run(action_sample, feed_dict={obs_t_ph: q_input})
         obs, reward, done, _ = env.step(action)
         replay_buffer.store_effect(index, action, reward, done)
 
@@ -267,8 +272,6 @@ def learn(env,
             #####
 
             # YOUR CODE HERE
-
-
             batch = replay_buffer.sample(batch_size)
             obs_t_batch, act_t_batch, rew_t_batch, obs_tp1_batch, done_t_batch = batch
             
@@ -276,7 +279,9 @@ def learn(env,
                 initialize_interdependent_variables(session, tf.global_variables(), {
                     obs_t_ph: obs_t_batch,
                     obs_tp1_ph: obs_tp1_batch,
-               })
+                })
+                session.run(update_target_fn)
+                model_initialized = True
 
             session.run(train_fn, feed_dict={
                         obs_t_ph: obs_t_batch,

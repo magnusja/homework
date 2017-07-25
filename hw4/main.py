@@ -91,21 +91,26 @@ class NnValueFunction(object):
         self.n_epochs = n_epochs
         self.lr = stepsize
 
-        with tf.name_scope('NnValueFunction'):
-            self.sy_X  = tf.placeholder(tf.float32, [None, ob_dim], 'nn_vf_x')
-            self.sy_y = tf.placeholder(tf.float32, [None], 'nn_vf_y')
+        self.sy_X  = tf.placeholder(tf.float32, [None, ob_dim], 'nn_vf_x')
+        self.sy_y = tf.placeholder(tf.float32, [None], 'nn_vf_y')
 
-            h1 = lrelu(dense(self.sy_X, 128, "nn_vfnn_h1", weight_init=normc_initializer(1.0)))
-            h2 = lrelu(dense(h1, 64, "nn_vf_h1", weight_init=normc_initializer(1.0)))
-            self.sy_value = dense(h1, 1, "nn_vfval", weight_init=normc_initializer(.01))
+        h1 = lrelu(dense(self.sy_X, 16, "nn_vfnn_h1", weight_init=normc_initializer(1.0)))
+        h2 = lrelu(dense(h1, 8, "nn_vf_h1", weight_init=normc_initializer(1.0)))
+        self.sy_value = dense(h1, 1, "nn_vfval", weight_init=normc_initializer(.01))
 
-            self.sy_criterion = (self.sy_value - self.sy_y) ** 2
+        self.sy_criterion = tf.reduce_mean(tf.squared_difference(self.sy_value, - self.sy_y))
 
-            self.update_op = tf.train.AdamOptimizer(stepsize).minimize(self.sy_criterion)
+        self.update_op = tf.train.AdamOptimizer(stepsize).minimize(self.sy_criterion)
+
+        with tf.name_scope('init'):
+            variables = tf.trainable_variables()
+            variables = list(filter(lambda x: x.name.startswith('nn_vf') , variables))
+            self.sy_reinit = tf.variables_initializer(variables)
 
     def fit(self, X, y):
+        self.session.run(self.sy_reinit)
         for _ in range(self.n_epochs):
-            self.session.run(self.update_op, feed_dict={self.sy_X: X, self.sy_y: y})
+            _, loss = self.session.run([self.update_op, self.sy_criterion], feed_dict={self.sy_X: X, self.sy_y: y})
 
     def predict(self, X):
         return self.session.run(self.sy_value, feed_dict={self.sy_X: X}).flatten()
@@ -266,10 +271,10 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
     update_op = tf.train.AdamOptimizer(sy_stepsize).minimize(sy_surr)
 
     # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
-    sy_kl = tf.log(sy_std_a / sy_std_old) + (sy_std_old ** 2 + (sy_mean_old - sy_mean_na) ** 2) / (2 * sy_mean_na) ** 2 - 0.5
+    sy_kl = tf.log(sy_std_a / sy_std_old) + (sy_std_old ** 2 + (sy_mean_old - sy_mean_na) ** 2) / (2 * sy_std_a) ** 2 - 0.5
     sy_kl = tf.reduce_mean(sy_kl)
     # https://math.stackexchange.com/questions/1804805/how-is-the-entropy-of-the-normal-distribution-derived
-    sy_ent = 0.5 * tf.log(2 * math.pi * math.e * sy_std_a ** 2)
+    sy_ent = -0.5 * tf.log(2 * math.pi * math.e * sy_std_a ** 2)
 
     sess = tf.Session()
     sess.__enter__() # equivalent to `with sess:`
@@ -366,7 +371,7 @@ if __name__ == "__main__":
         general_params = dict(gamma=0.97, animate=False, min_timesteps_per_batch=2500, n_iter=300, initial_stepsize=1e-3)
         params = [
             dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),
-            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), **general_params),
+            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=30, stepsize=1e-3), **general_params),
             dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),
             dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), **general_params),
             dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),

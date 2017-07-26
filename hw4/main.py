@@ -94,17 +94,19 @@ class NnValueFunction(object):
         self.sy_X  = tf.placeholder(tf.float32, [None, ob_dim], 'nn_vf_x')
         self.sy_y = tf.placeholder(tf.float32, [None], 'nn_vf_y')
 
-        h1 = lrelu(dense(self.sy_X, 16, "nn_vfnn_h1", weight_init=normc_initializer(1.0)))
-        h2 = lrelu(dense(h1, 8, "nn_vf_h1", weight_init=normc_initializer(1.0)))
-        self.sy_value = dense(h1, 1, "nn_vfval", weight_init=normc_initializer(.01))
+        h1 = tf.nn.dropout(lrelu(dense(self.sy_X, 16, "nn_vfnn_h1", weight_init=normc_initializer(.10))), 0.9)
+        #h2 = tf.nn.dropout(lrelu(dense(h1, 4, "nn_vf_h2", weight_init=normc_initializer(.10))), 0.5)
+        #h3 = tf.nn.dropout(lrelu(dense(h2, 8, "nn_vf_h3", weight_init=normc_initializer(1.0))), 0.8)
+        self.sy_value = dense(h1, 1, "nn_vfval", weight_init=normc_initializer(.1))
 
-        self.sy_criterion = tf.reduce_mean(tf.squared_difference(self.sy_value, - self.sy_y))
+        self.sy_criterion = tf.reduce_mean(tf.squared_difference(self.sy_value, self.sy_y))
 
-        self.update_op = tf.train.AdamOptimizer(stepsize).minimize(self.sy_criterion)
+        self.update_op = tf.train.GradientDescentOptimizer(stepsize).minimize(self.sy_criterion)
 
         with tf.name_scope('init'):
             variables = tf.trainable_variables()
             variables = list(filter(lambda x: x.name.startswith('nn_vf') , variables))
+            print(variables)
             self.sy_reinit = tf.variables_initializer(variables)
 
     def fit(self, X, y):
@@ -124,12 +126,15 @@ def lrelu(x, leak=0.2):
 
 
 
-def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None):
+def main_cartpole(vf_params, n_iter=300, gamma=1.0, min_timesteps_per_batch=1000, stepsize=1e-2, animate=True, logdir=None, vf_type='linear'):
     env = gym.make("CartPole-v0")
     ob_dim = env.observation_space.shape[0]
     num_actions = env.action_space.n
     logz.configure_output_dir(logdir)
-    vf = LinearValueFunction()
+    if vf_type == 'linear':
+        vf = LinearValueFunction(**vf_params)
+    elif vf_type == 'nn':
+        vf = NnValueFunction(ob_dim=ob_dim, **vf_params)
 
     # Symbolic variables have the prefix sy_, to distinguish them from the numerical values
     # that are computed later in these function
@@ -166,6 +171,8 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
     tf.global_variables_initializer().run() #pylint: disable=E1101
 
     total_timesteps = 0
+
+    vf.session = sess
 
     for i in range(n_iter):
         print("********** Iteration %i ************"%i)
@@ -231,50 +238,53 @@ def main_cartpole(n_iter=100, gamma=1.0, min_timesteps_per_batch=1000, stepsize=
         # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
         logz.dump_tabular()
 
-def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_stepsize, desired_kl, vf_type, vf_params, animate=False):
+def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_stepsize, desired_kl, vf_type, vf_params, animate=False, name=''):
     tf.set_random_seed(seed)
     np.random.seed(seed)
     env = gym.make("Pendulum-v0")
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.shape[0]
     logz.configure_output_dir(logdir)
-    if vf_type == 'linear':
-        vf = LinearValueFunction(**vf_params)
-    elif vf_type == 'nn':
-        vf = NnValueFunction(ob_dim=ob_dim, **vf_params)
 
-    sy_ob_no = tf.placeholder(shape=[None, ob_dim], name="ob", dtype=tf.float32) # batch of observations
-    sy_ac_n = tf.placeholder(shape=[None], name="ac", dtype=tf.float32) # batch of actions taken by the policy, used for policy gradient computation
-    sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32) # advantage function estimate
-    sy_mean_old =  tf.placeholder(shape=[None, ac_dim], name="sy_mean_old", dtype=tf.float32)
-    sy_std_old = tf.placeholder(shape=[ac_dim], name="sy_std_old", dtype=tf.float32)
+    with tf.variable_scope(name):
+        if vf_type == 'linear':
+            vf = LinearValueFunction(**vf_params)
+        elif vf_type == 'nn':
+            vf = NnValueFunction(ob_dim=ob_dim, **vf_params)
 
-    sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
-    sy_h2 = lrelu(dense(sy_h1, 32, "h2", weight_init=normc_initializer(1.0)))
+        sy_ob_no = tf.placeholder(shape=[None, ob_dim], name="ob", dtype=tf.float32) # batch of observations
+        sy_ac_n = tf.placeholder(shape=[None], name="ac", dtype=tf.float32) # batch of actions taken by the policy, used for policy gradient computation
+        sy_adv_n = tf.placeholder(shape=[None], name="adv", dtype=tf.float32) # advantage function estimate
+        sy_mean_old =  tf.placeholder(shape=[None, ac_dim], name="sy_mean_old", dtype=tf.float32)
+        sy_std_old = tf.placeholder(shape=[ac_dim], name="sy_std_old", dtype=tf.float32)
 
-    sy_mean_na = dense(sy_h2, ac_dim, 'mean_na', weight_init=normc_initializer(0.1))
-    sy_logstd_a = tf.get_variable("logstdev", [ac_dim], initializer=tf.zeros_initializer) # Variance
-    sy_std_a = tf.exp(sy_logstd_a)
-    sy_n = tf.shape(sy_ob_no)[0]
+        sy_h1 = lrelu(dense(sy_ob_no, 32, "h1", weight_init=normc_initializer(1.0))) # hidden layer
+        #sy_h2 = lrelu(dense(sy_h1, 16, "h2", weight_init=normc_initializer(1.0)))
 
-    with tf.name_scope('sample_action'):
-        dist = tf.contrib.distributions.Normal(loc=sy_mean_na, scale=sy_std_a)
-        sy_sampled_ac = dist.sample()
+        sy_mean_na = dense(sy_h1, ac_dim, 'mean_na', weight_init=normc_initializer(0.1))
+        sy_logstd_a = tf.get_variable("logstdev", [ac_dim], initializer=tf.zeros_initializer) # Variance
+        sy_std_a = tf.exp(sy_logstd_a)
+        sy_n = tf.shape(sy_ob_no)[0]
 
-    with tf.name_scope('sy_logprob_n'):
-        dist = tf.contrib.distributions.Normal(loc=sy_mean_na, scale=sy_std_a)
-        sy_logprob_n = dist.log_prob(sy_ac_n)
+        with tf.name_scope('sample_action'):
+            dist = tf.contrib.distributions.Normal(loc=sy_mean_na, scale=sy_std_a)
+            sy_sampled_ac = dist.sample()
 
-    sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
+        with tf.name_scope('sy_logprob_n'):
+            dist = tf.contrib.distributions.Normal(loc=tf.reshape(sy_mean_na, [-1]), scale=sy_std_a)
+            sy_logprob_n = dist.log_prob(sy_ac_n)
+            sy_logprob_n_shape = tf.shape(sy_logprob_n)
 
-    sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
-    update_op = tf.train.AdamOptimizer(sy_stepsize).minimize(sy_surr)
+        sy_surr = - tf.reduce_mean(sy_adv_n * sy_logprob_n) # Loss function that we'll differentiate to get the policy gradient ("surr" is for "surrogate loss")
 
-    # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
-    sy_kl = tf.log(sy_std_a / sy_std_old) + (sy_std_old ** 2 + (sy_mean_old - sy_mean_na) ** 2) / (2 * sy_std_a) ** 2 - 0.5
-    sy_kl = tf.reduce_mean(sy_kl)
-    # https://math.stackexchange.com/questions/1804805/how-is-the-entropy-of-the-normal-distribution-derived
-    sy_ent = -0.5 * tf.log(2 * math.pi * math.e * sy_std_a ** 2)
+        sy_stepsize = tf.placeholder(shape=[], dtype=tf.float32) # Symbolic, in case you want to change the stepsize during optimization. (We're not doing that currently)
+        update_op = tf.train.AdamOptimizer(sy_stepsize).minimize(sy_surr)
+
+        # https://stats.stackexchange.com/questions/7440/kl-divergence-between-two-univariate-gaussians
+        sy_kl = tf.log(sy_std_a / sy_std_old) + (sy_std_old ** 2 + (sy_mean_old - sy_mean_na) ** 2) / (2 * sy_std_a ** 2) - 0.5
+        sy_kl = tf.reduce_mean(sy_kl)
+        # https://math.stackexchange.com/questions/1804805/how-is-the-entropy-of-the-normal-distribution-derived
+        sy_ent = tf.squeeze(-0.5 * tf.log(2 * math.pi * sy_std_a ** 2) + 1)
 
     sess = tf.Session()
     sess.__enter__() # equivalent to `with sess:`
@@ -320,7 +330,7 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
             rew_t = path["reward"]
             return_t = discount(rew_t, gamma)
             vpred_t = vf.predict(path["observation"])
-            adv_t = return_t - vpred_t
+            adv_t = return_t.flatten() - vpred_t
             advs.append(adv_t)
             vtargs.append(return_t)
             vpreds.append(vpred_t)
@@ -335,8 +345,10 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
         vf.fit(ob_no, vtarg_n)
 
         # Policy update
-        _, mean_na_old, std_a_old = sess.run([update_op, sy_mean_na, sy_std_a], feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n, sy_stepsize:stepsize})
+        _, mean_na_old, std_a_old, logprob_n_shape = sess.run([update_op, sy_mean_na, sy_std_a, sy_logprob_n_shape], feed_dict={sy_ob_no:ob_no, sy_ac_n:ac_n, sy_adv_n:standardized_adv_n, sy_stepsize:stepsize})
         kl, ent = sess.run([sy_kl, sy_ent], feed_dict={sy_ob_no:ob_no, sy_mean_old:mean_na_old, sy_std_old:std_a_old})
+
+        print(logprob_n_shape)
 
         if kl > desired_kl * 2: 
             stepsize /= 1.5
@@ -366,17 +378,19 @@ def main_pendulum1(d):
 
 if __name__ == "__main__":
     if 0:
-        main_cartpole(logdir='/tmp/experiments/cartpole') # when you want to start collecting results, set the logdir
+        #main_cartpole(dict(), logdir='/tmp/experiments/cartpole_linear', vf_type='linear') # when you want to start collecting results, set the logdir
+        #tf.reset_default_graph()
+        main_cartpole(logdir='/tmp/experiments/cartpole_nn', vf_type='nn', vf_params=dict(n_epochs=20, stepsize=1e-3)) # when you want to start collecting results, set the logdir
     if 1:
         general_params = dict(gamma=0.97, animate=False, min_timesteps_per_batch=2500, n_iter=300, initial_stepsize=1e-3)
         params = [
-            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),
-            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=30, stepsize=1e-3), **general_params),
-            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),
-            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), **general_params),
-            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='linear', vf_params={}, **general_params),
-            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), **general_params),
+            #dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed0', **general_params),
+            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=15, stepsize=1e-3), name='nnvf-kl2e-3-seed0', **general_params),
+            dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed1', **general_params),
+            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), name='nnvf-kl2e-3-seed1', **general_params),
+            dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed2', **general_params),
+            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), name='nnvf-kl2e-3-seed2', **general_params),
         ]
-        import multiprocessing
-        p = multiprocessing.Pool()
-        p.map(main_pendulum1, params)
+        for param in params:
+            tf.reset_default_graph()
+            main_pendulum1(param)

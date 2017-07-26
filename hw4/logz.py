@@ -46,49 +46,52 @@ def configure_output_dir(d=None):
     """
     Set output directory to d, or to /tmp/somerandomnumber if d is None
     """
-    G.output_dir = d or "/tmp/experiments/%i"%int(time.time())
-    assert not osp.exists(G.output_dir), "Log dir %s already exists! Delete it first or use a different dir"%G.output_dir
-    os.makedirs(G.output_dir)
-    G.output_file = open(osp.join(G.output_dir, "log.txt"), 'w')
-    atexit.register(G.output_file.close)
+    g = G()
+    g.output_dir = d or "/tmp/experiments/%i"%int(time.time())
+    assert not osp.exists(g.output_dir), "Log dir %s already exists! Delete it first or use a different dir"%g.output_dir
+    os.makedirs(g.output_dir)
+    g.output_file = open(osp.join(g.output_dir, "log.txt"), 'w')
+    atexit.register(g.output_file.close)
     try:
-        cmd = "cd %s && git diff > %s 2>/dev/null"%(osp.dirname(__file__), osp.join(G.output_dir, "a.diff"))
+        cmd = "cd %s && git diff > %s 2>/dev/null"%(osp.dirname(__file__), osp.join(g.output_dir, "a.diff"))
         subprocess.check_call(cmd, shell=True) # Save git diff to experiment directory
     except subprocess.CalledProcessError:
         print("configure_output_dir: not storing the git diff, probably because you're not in a git repo")
-    print(colorize("Logging data to %s"%G.output_file.name, 'green', bold=True))
+    print(colorize("Logging data to %s"%g.output_file.name, 'green', bold=True))
 
-def log_tabular(key, val):
+    return g
+
+def log_tabular(g, key, val):
     """
     Log a value of some diagnostic
     Call this once for each diagnostic quantity, each iteration
     """
-    if G.first_row:
-        G.log_headers.append(key)
+    if g.first_row:
+        g.log_headers.append(key)
     else:
-        assert key in G.log_headers, "Trying to introduce a new key %s that you didn't include in the first iteration"%key
-    assert key not in G.log_current_row, "You already set %s this iteration. Maybe you forgot to call dump_tabular()"%key
-    G.log_current_row[key] = val
+        assert key in g.log_headers, "Trying to introduce a new key %s that you didn't include in the first iteration"%key
+    assert key not in g.log_current_row, "You already set %s this iteration. Maybe you forgot to call dump_tabular()"%key
+    g.log_current_row[key] = val
 
-def dump_tabular():
+def dump_tabular(g):
     """
     Write all of the diagnostics from the current iteration
     """
     vals = []
     print("-"*37)
-    for key in G.log_headers:
-        val = G.log_current_row.get(key, "")
+    for key in g.log_headers:
+        val = g.log_current_row.get(key, "")
         if hasattr(val, "__float__"): valstr = "%8.3g"%val
         else: valstr = val
         print("| %15s | %15s |"%(key, valstr))
         vals.append(val)
     print("-"*37)
-    if G.output_file is not None:
-        if G.first_row:
-            G.output_file.write("\t".join(G.log_headers))
-            G.output_file.write("\n")
-        G.output_file.write("\t".join(map(str,vals)))
-        G.output_file.write("\n")
-        G.output_file.flush()
-    G.log_current_row.clear()
-    G.first_row=False
+    if g.output_file is not None:
+        if g.first_row:
+            g.output_file.write("\t".join(g.log_headers))
+            g.output_file.write("\n")
+        g.output_file.write("\t".join(map(str,vals)))
+        g.output_file.write("\n")
+        g.output_file.flush()
+    g.log_current_row.clear()
+    g.first_row=False

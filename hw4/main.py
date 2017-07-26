@@ -130,7 +130,7 @@ def main_cartpole(vf_params, n_iter=300, gamma=1.0, min_timesteps_per_batch=1000
     env = gym.make("CartPole-v0")
     ob_dim = env.observation_space.shape[0]
     num_actions = env.action_space.n
-    logz.configure_output_dir(logdir)
+    g = logz.configure_output_dir(logdir)
     if vf_type == 'linear':
         vf = LinearValueFunction(**vf_params)
     elif vf_type == 'nn':
@@ -227,16 +227,16 @@ def main_cartpole(vf_params, n_iter=300, gamma=1.0, min_timesteps_per_batch=1000
         kl, ent = sess.run([sy_kl, sy_ent], feed_dict={sy_ob_no:ob_no, sy_oldlogits_na:oldlogits_na})
 
         # Log diagnostics
-        logz.log_tabular("EpRewMean", np.mean([path["reward"].sum() for path in paths]))
-        logz.log_tabular("EpLenMean", np.mean([pathlength(path) for path in paths]))
-        logz.log_tabular("KLOldNew", kl)
-        logz.log_tabular("Entropy", ent)
-        logz.log_tabular("EVBefore", explained_variance_1d(vpred_n, vtarg_n))
-        logz.log_tabular("EVAfter", explained_variance_1d(vf.predict(ob_no), vtarg_n))
-        logz.log_tabular("TimestepsSoFar", total_timesteps)
+        logz.log_tabular(g, "EpRewMean", np.mean([path["reward"].sum() for path in paths]))
+        logz.log_tabular(g, "EpLenMean", np.mean([pathlength(path) for path in paths]))
+        logz.log_tabular(g, "KLOldNew", kl)
+        logz.log_tabular(g, "Entropy", ent)
+        logz.log_tabular(g, "EVBefore", explained_variance_1d(vpred_n, vtarg_n))
+        logz.log_tabular(g, "EVAfter", explained_variance_1d(vf.predict(ob_no), vtarg_n))
+        logz.log_tabular(g, "TimestepsSoFar", total_timesteps)
         # If you're overfitting, EVAfter will be way larger than EVBefore.
         # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
-        logz.dump_tabular()
+        logz.dump_tabular(g)
 
 def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_stepsize, desired_kl, vf_type, vf_params, animate=False, name=''):
     tf.set_random_seed(seed)
@@ -244,7 +244,7 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
     env = gym.make("Pendulum-v0")
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.shape[0]
-    logz.configure_output_dir(logdir)
+    g = logz.configure_output_dir(logdir)
 
     with tf.variable_scope(name):
         if vf_type == 'linear':
@@ -361,16 +361,16 @@ def main_pendulum(logdir, seed, n_iter, gamma, min_timesteps_per_batch, initial_
 
 
         # Log diagnostics
-        logz.log_tabular("EpRewMean", np.mean([path["reward"].sum() for path in paths]))
-        logz.log_tabular("EpLenMean", np.mean([pathlength(path) for path in paths]))
-        logz.log_tabular("KLOldNew", kl)
-        logz.log_tabular("Entropy", ent)
-        logz.log_tabular("EVBefore", explained_variance_1d(vpred_n, vtarg_n))
-        logz.log_tabular("EVAfter", explained_variance_1d(vf.predict(ob_no), vtarg_n))
-        logz.log_tabular("TimestepsSoFar", total_timesteps)
+        logz.log_tabular(g, "EpRewMean", np.mean([path["reward"].sum() for path in paths]))
+        logz.log_tabular(g, "EpLenMean", np.mean([pathlength(path) for path in paths]))
+        logz.log_tabular(g, "KLOldNew", kl)
+        logz.log_tabular(g, "Entropy", ent)
+        logz.log_tabular(g, "EVBefore", explained_variance_1d(vpred_n, vtarg_n))
+        logz.log_tabular(g, "EVAfter", explained_variance_1d(vf.predict(ob_no), vtarg_n))
+        logz.log_tabular(g, "TimestepsSoFar", total_timesteps)
         # If you're overfitting, EVAfter will be way larger than EVBefore.
         # Note that we fit value function AFTER using it to compute the advantage function to avoid introducing bias
-        logz.dump_tabular()
+        logz.dump_tabular(g)
 
 
 def main_pendulum1(d):
@@ -384,13 +384,14 @@ if __name__ == "__main__":
     if 1:
         general_params = dict(gamma=0.97, animate=False, min_timesteps_per_batch=2500, n_iter=300, initial_stepsize=1e-3)
         params = [
-            #dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed0', **general_params),
-            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=15, stepsize=1e-3), name='nnvf-kl2e-3-seed0', **general_params),
-            dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed1', **general_params),
-            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), name='nnvf-kl2e-3-seed1', **general_params),
-            dict(logdir='/tmp/experiments1/linearvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed2', **general_params),
-            dict(logdir='/tmp/experiments1/nnvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=10, stepsize=1e-3), name='nnvf-kl2e-3-seed2', **general_params),
+            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed0', **general_params),
+            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed0', seed=0, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=15, stepsize=1e-3), name='nnvf-kl2e-3-seed0', **general_params),
+            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed1', **general_params),
+            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed1', seed=1, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=15, stepsize=1e-3), name='nnvf-kl2e-3-seed1', **general_params),
+            dict(logdir='/tmp/experiments/linearvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='linear', vf_params={}, name='linearvf-kl2e-3-seed2', **general_params),
+            dict(logdir='/tmp/experiments/nnvf-kl2e-3-seed2', seed=2, desired_kl=2e-3, vf_type='nn', vf_params=dict(n_epochs=15, stepsize=1e-3), name='nnvf-kl2e-3-seed2', **general_params),
         ]
-        for param in params:
-            tf.reset_default_graph()
-            main_pendulum1(param)
+
+        import multiprocessing 
+        p = multiprocessing.Pool() 
+        p.map(main_pendulum1, params) 
